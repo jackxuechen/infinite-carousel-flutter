@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/physics.dart';
@@ -22,6 +23,8 @@ class InfiniteCarousel extends StatefulWidget {
     required this.itemBuilder,
     this.physics,
     this.controller,
+    this.autoScroll = false,
+    this.speed = 1,
     this.onIndexChanged,
     this.anchor = 0.0,
     this.loop = true,
@@ -43,6 +46,12 @@ class InfiniteCarousel extends StatefulWidget {
                     itemCount - (index.abs() % itemCount) - 1, -(index + 1)),
               )
             : null;
+
+  /// auto scroll
+  final bool autoScroll;
+
+  /// 16 ms scroll distance
+  final double speed;
 
   /// Total items to build for the carousel.
   final int itemCount;
@@ -117,6 +126,7 @@ class _InfiniteCarouselState extends State<InfiniteCarousel> {
   final Key _forwardListKey = const ValueKey<String>('infinite_carousel_key');
   late InfiniteScrollController scrollController;
   late int _lastReportedItemIndex;
+  Timer? _timer;
 
   @override
   void initState() {
@@ -128,6 +138,7 @@ class _InfiniteCarouselState extends State<InfiniteCarousel> {
       scrollController = InfiniteScrollController();
     }
     _lastReportedItemIndex = scrollController.initialItem;
+    _resetTimer();
   }
 
   List<Widget> _buildSlivers() {
@@ -156,6 +167,28 @@ class _InfiniteCarouselState extends State<InfiniteCarousel> {
     }
   }
 
+  void _resetTimer() {
+    if (!widget.autoScroll) {
+      return;
+    }
+    _clearTimer();
+    _timer = Timer.periodic(
+      const Duration(milliseconds: 16),
+      (timer) {
+        if (scrollController.positions.isNotEmpty) {
+          scrollController.jumpTo(
+            scrollController.position.pixels + widget.speed,
+          );
+        }
+      },
+    );
+  }
+
+  void _clearTimer() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final AxisDirection axisDirection = _getDirection(context);
@@ -179,26 +212,36 @@ class _InfiniteCarouselState extends State<InfiniteCarousel> {
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           final centeredAnchor = _getCenteredAnchor(constraints);
-
-          return _InfiniteScrollable(
-            controller: scrollController,
-            itemExtent: widget.itemExtent,
-            loop: widget.loop,
-            velocityFactor: widget.velocityFactor,
-            itemCount: widget.itemCount,
-            physics: widget.physics ?? const InfiniteScrollPhysics(),
-            axisDirection: axisDirection,
-            scrollBehavior: widget.scrollBehavior ??
-                ScrollConfiguration.of(context).copyWith(scrollbars: false),
-            viewportBuilder: (BuildContext context, ViewportOffset position) {
-              return Viewport(
-                center: _forwardListKey,
-                anchor: centeredAnchor,
-                axisDirection: axisDirection,
-                offset: position,
-                slivers: _buildSlivers(),
-              );
+          return Listener(
+            onPointerDown: (event) {
+              _clearTimer();
             },
+            onPointerUp: (event) {
+              _resetTimer();
+            },
+            onPointerCancel: (event) {
+              _resetTimer();
+            },
+            child: _InfiniteScrollable(
+              controller: scrollController,
+              itemExtent: widget.itemExtent,
+              loop: widget.loop,
+              velocityFactor: widget.velocityFactor,
+              itemCount: widget.itemCount,
+              physics: widget.physics ?? const InfiniteScrollPhysics(),
+              axisDirection: axisDirection,
+              scrollBehavior: widget.scrollBehavior ??
+                  ScrollConfiguration.of(context).copyWith(scrollbars: false),
+              viewportBuilder: (BuildContext context, ViewportOffset position) {
+                return Viewport(
+                  center: _forwardListKey,
+                  anchor: centeredAnchor,
+                  axisDirection: axisDirection,
+                  offset: position,
+                  slivers: _buildSlivers(),
+                );
+              },
+            ),
           );
         },
       ),
@@ -213,6 +256,12 @@ class _InfiniteCarouselState extends State<InfiniteCarousel> {
         ? constraints.maxWidth
         : constraints.maxHeight;
     return ((total / 2) - (widget.itemExtent / 2)) / total;
+  }
+
+  @override
+  void dispose() {
+    _clearTimer();
+    super.dispose();
   }
 }
 
